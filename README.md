@@ -1,43 +1,65 @@
-# 🌡️ Smart Temperature Comfort Advisor (AglaMausam)
+# 🌾 Smart Agriculture & Crop Prediction System (SmartFarm)
 
-IoT-based embedded system using **ESP8266 (NodeMCU)** and **DHT22** sensor to continuously monitor temperature and humidity.  
-Data is uploaded in real-time to **Firebase Realtime Database** for cloud storage and further analysis.  
-Includes QA documentation, troubleshooting, and collaboration logs managed through **GitHub Issues**.
+IoT-based embedded system using **ESP8266 (NodeMCU)** with **Soil Moisture Sensor, DHT11, and pH Sensor** to continuously monitor soil conditions.  
+Data is uploaded in real-time to **Firebase Realtime Database** for cloud analytics and crop prediction.  
+Includes complete project documentation, SDG mapping, methodology, and hardware details.
 
 ---
 
 ## 📘 Project Overview
 
-The **Smart Temperature Comfort Advisor** is designed to measure environmental comfort levels by collecting temperature and humidity data from a DHT22 sensor and transmitting it to Firebase via the ESP8266 microcontroller.
+The **Smart Agriculture & Crop Prediction System** monitors environmental and soil parameters such as:
 
-This data can later be used by mobile or web applications to:
-- Predict comfort levels (heat index)
-- Provide voice-based climate tips
-- Analyze long-term environmental patterns
+- 🌡️ **Temperature**  
+- 💧 **Humidity**  
+- 🌱 **Soil Moisture**  
+- ⚗️ **Soil pH**
+
+The collected data is used for:
+
+- Real-time soil monitoring  
+- Cloud-based storage and visualization  
+- Crop suitability prediction  
+- Smart farming recommendations  
+
+This system assists farmers in choosing the **best crop** for their land, improving productivity and sustainability.
 
 ---
 
 ## 🧩 Hardware Components
 
 | Component | Function |
-|------------|-----------|
-| **ESP8266 (NodeMCU)** | Main controller; connects to Wi-Fi and uploads data to Firebase |
-| **DHT22 Sensor** | Measures temperature (°C) and humidity (%) |
-| **Jumper Wires** | For circuit connections |
-| **Power Source (USB 5V)** | Powers the ESP8266 board |
+|----------|----------|
+| **ESP8266 (NodeMCU)** | Main IoT controller with Wi-Fi |
+| **DHT11 Sensor** | Measures temperature & humidity |
+| **Soil Moisture Sensor** | Tracks water content in soil |
+| **pH Sensor** | Measures soil acidity/alkalinity |
+| **Jumper Wires, Breadboard** | Circuit setup |
+| **Power Supply / Battery** | Powers the ESP8266 |
 
 ---
 
 ## ⚙️ Working Principle
 
 ### **1. Data Collection**
-The DHT22 sensor measures temperature and humidity from the surrounding environment every 2 seconds.
+Sensors measure soil moisture, pH, temperature, and humidity at regular intervals.
 
-### **2. Data Transmission**
-The ESP8266 connects to Wi-Fi (2.4 GHz) and sends the collected data (temperature, humidity, and timestamp) to Firebase Realtime Database.
+### **2. Data Processing**
+Sensor values are filtered, calibrated, and converted into meaningful physical quantities.
 
-### **3. Cloud Storage**
-Firebase stores the data in structured JSON format for real-time access by other applications.
+### **3. Data Transmission**
+ESP8266 connects to Wi-Fi and sends the processed data to **Firebase Realtime Database**.
+
+### **4. Cloud Storage**
+Firebase stores readings in a structured JSON tree for analysis, graphs, and dashboards.
+
+### **5. Crop Prediction**
+Based on:
+- Soil moisture  
+- pH range  
+- Temperature  
+
+The system compares values with crop requirement datasets and recommends the most suitable crops.
 
 ---
 
@@ -45,20 +67,21 @@ Firebase stores the data in structured JSON format for real-time access by other
 
 ```cpp
 #include <ESP8266WiFi.h>
-#include <FirebaseESP8266.h>
-#include "DHT.h"
+#include <Firebase_ESP_Client.h>
+#include <DHT.h>
 
-#define DHTPIN 4       // D2 on NodeMCU
-#define DHTTYPE DHT22  
+#define WIFI_SSID "YourWiFi"
+#define WIFI_PASSWORD "YourPassword"
+
+#define API_KEY "YourFirebaseAPIKey"
+#define DATABASE_URL "yourfirebase.firebaseio.com"
+
+#define DHTPIN D4
+#define DHTTYPE DHT11
+#define ANALOG_PIN A0
+
 DHT dht(DHTPIN, DHTTYPE);
-
-#define WIFI_SSID "YourWiFiName"
-#define WIFI_PASSWORD "YourWiFiPassword"
-
-#define FIREBASE_HOST "yourproject.firebaseio.com"
-#define FIREBASE_AUTH "your_firebase_secret"
-
-FirebaseData firebaseData;
+FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
@@ -67,42 +90,50 @@ void setup() {
   dht.begin();
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\n✅ WiFi connected");
+  Serial.println("\n✅ WiFi connected!");
 
-  config.host = FIREBASE_HOST;
-  config.signer.tokens.legacy_token = FIREBASE_AUTH;
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
 
+  Firebase.signUp(&config, &auth, "", "");
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 }
 
-void loop() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-
-  if (isnan(h) || isnan(t)) {
-    Serial.println("❌ Failed to read from DHT22 sensor!");
-    return;
+float readPH() {
+  int samples = 10;
+  float total = 0;
+  for (int i = 0; i < samples; i++) {
+    total += analogRead(ANALOG_PIN);
+    delay(10);
   }
+  float avgADC = total / samples;
+  float voltage = avgADC * (3.3 / 1023.0);
+  float phValue = 7 + ((2.5 - voltage) / 0.18);
+  return phValue;
+}
 
-  Serial.print("Humidity: "); Serial.print(h);
-  Serial.print(" %\tTemperature: "); Serial.print(t);
-  Serial.println(" °C");
+int readMoisture() {
+  int val = analogRead(ANALOG_PIN);
+  return map(val, 1023, 0, 0, 100);
+}
 
-  FirebaseJson json;
-  json.set("humidity", h);
-  json.set("temperature", t);
-  json.set("timestamp", millis());
+void loop() {
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+  int moisture = readMoisture();
+  float pH = readPH();
 
-  if (Firebase.pushJSON(firebaseData, "/DHT22", json))
-    Serial.println("✅ Data stored at path: " + firebaseData.dataPath());
-  else
-    Serial.println("❌ Data failed: " + firebaseData.errorReason());
+  String path = "/SmartFarm/Readings/" + String(millis());
 
-  delay(2000);
+  Firebase.RTDB.setFloat(&fbdo, path + "/Temperature", temperature);
+  Firebase.RTDB.setFloat(&fbdo, path + "/Humidity", humidity);
+  Firebase.RTDB.setInt(&fbdo, path + "/Moisture", moisture);
+  Firebase.RTDB.setFloat(&fbdo, path + "/pH", pH);
+
+  delay(5000);
 }
